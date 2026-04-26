@@ -40,13 +40,13 @@ function getPlaceCount(days, style) {
 }
 
 function buildSearchLink(destination, query, provider) {
-  const encoded = encodeURIComponent(`${destination} ${query}`);
+  const encoded = encodeURIComponent(`${destination} ${query || "travel"}`);
   if (provider === "google") return `https://www.google.com/maps/search/?api=1&query=${encoded}`;
   return `https://maps.apple.com/?q=${encoded}`;
 }
 
 function buildInfoLink(destination, title) {
-  return `https://www.google.com/search?q=${encodeURIComponent(`${destination} ${title} travel guide`)}`;
+  return `https://www.google.com/search?q=${encodeURIComponent(`${destination} ${title || "travel guide"} travel guide`)}`;
 }
 
 function estimateBudget(days, budget) {
@@ -117,6 +117,30 @@ function groupByDay(plan, days) {
   }));
 }
 
+function normalizeAiPlaces(data, safeDestination, mapProvider) {
+  const rawPlaces = Array.isArray(data?.places) ? data.places : [];
+
+  return rawPlaces.map((place, index) => {
+    const title = place.title || place.placeName || "AI Stop";
+    const placeName = place.placeName || `${safeDestination} ${title}`;
+    const query = place.query || place.mapQuery || placeName || title;
+
+    return {
+      id: index,
+      day: Math.max(1, Number(place.day) || 1),
+      title,
+      placeName,
+      type: place.type || "Travel stop",
+      duration: place.duration || "60-90 min",
+      movement: place.movement || "Walk / transit",
+      reason: place.reason || place.description || "AI recommended stop for this itinerary.",
+      photo: place.photo || "Take a clean establishing shot and one detail shot.",
+      map: buildSearchLink(safeDestination, query, mapProvider),
+      info: buildInfoLink(safeDestination, title)
+    };
+  });
+}
+
 export default function App() {
   const [destination, setDestination] = useState("Paris");
   const [days, setDays] = useState(3);
@@ -142,7 +166,7 @@ export default function App() {
 
   async function generatePlan() {
     setLoading(true);
-    setAiStatus("Generating AI plan...");
+    setAiStatus("Generating AI itinerary...");
 
     try {
       const res = await fetch("/api/generate", {
@@ -167,12 +191,14 @@ export default function App() {
         throw new Error(data?.error || "API request failed");
       }
 
-      if (!data?.result) {
-        throw new Error("AI returned empty result");
+      const aiPlan = normalizeAiPlaces(data, safeDestination, mapProvider);
+
+      if (!aiPlan.length) {
+        throw new Error("AI returned invalid itinerary. Check api/generate.js JSON format.");
       }
 
-      setPlan(buildPlan(safeDestination, safeDays, style, mapProvider));
-      setAiStatus("AI plan generated:\n" + data.result);
+      setPlan(aiPlan);
+      setAiStatus("AI itinerary generated");
     } catch (err) {
       console.error("AI ERROR:", err);
       setAiStatus(`AI failed: ${err.message}`);
@@ -192,9 +218,10 @@ export default function App() {
 
   async function copyPlan() {
     const text = groupedPlan.map((day) => {
-      const places = day.places.map((p, i) => `${i + 1}. ${p.title}\n${p.map}\n${p.reason}`).join("\n\n");
+      const places = day.places.map((p, i) => `${i + 1}. ${p.title}\n${p.placeName}\n${p.map}\n${p.reason}`).join("\n\n");
       return `Day ${day.day}\n${places}`;
     }).join("\n\n---\n\n");
+
     await navigator.clipboard.writeText(text);
     setCopied(true);
     setTimeout(() => setCopied(false), 1400);
@@ -217,19 +244,23 @@ export default function App() {
             <Field label="Destination" icon="🌍" wide>
               <input style={styles.input} value={destination} onChange={(e) => setDestination(e.target.value)} placeholder="City, country or route" />
             </Field>
+
             <Field label="Days" icon="📅">
               <input style={styles.input} type="number" min="1" max="30" value={days} onChange={(e) => setDays(e.target.value)} />
             </Field>
+
             <Field label="Style" icon="⚡">
               <select style={styles.input} value={style} onChange={(e) => setStyle(e.target.value)}>
                 {tripStyles.map((x) => <option key={x}>{x}</option>)}
               </select>
             </Field>
+
             <Field label="Budget" icon="💳">
               <select style={styles.input} value={budget} onChange={(e) => setBudget(e.target.value)}>
                 {budgets.map((x) => <option key={x}>{x}</option>)}
               </select>
             </Field>
+
             <Field label="Map" icon="🗺️">
               <select style={styles.input} value={mapProvider} onChange={(e) => setMapProvider(e.target.value)}>
                 {mapProviders.map((x) => <option key={x.value} value={x.value}>{x.label}</option>)}
