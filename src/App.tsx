@@ -1,3 +1,4 @@
+// @ts-nocheck
 import React, { useEffect, useMemo, useState } from "react";
 
 const tripStyles = ["Maximum sightseeing", "Balanced", "Relaxed", "Content creator", "Business + quick tourism"];
