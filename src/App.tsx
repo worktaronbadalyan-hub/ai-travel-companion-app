@@ -127,6 +127,8 @@ export default function App() {
   const [interests, setInterests] = useState(["Classic", "Photography"]);
   const [plan, setPlan] = useState([]);
   const [copied, setCopied] = useState(false);
+  const [aiStatus, setAiStatus] = useState("Ready");
+  const [loading, setLoading] = useState(false);
 
   const safeDays = normalizeDays(days);
   const safeDestination = normalizeDestination(destination);
@@ -138,12 +140,54 @@ export default function App() {
     setPlan(buildPlan(safeDestination, safeDays, style, mapProvider));
   }, []);
 
-  function generatePlan() {
-    setPlan(buildPlan(safeDestination, safeDays, style, mapProvider));
+  async function generatePlan() {
+    setLoading(true);
+    setAiStatus("Generating AI plan...");
+
+    try {
+      const res = await fetch("/api/generate", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          destination: safeDestination,
+          days: safeDays,
+          style,
+          budget,
+          language,
+          interests
+        })
+      });
+
+      const data = await res.json();
+      console.log("AI RESPONSE:", data);
+
+      if (!res.ok) {
+        throw new Error(data?.error || "API request failed");
+      }
+
+      if (!data?.result) {
+        throw new Error("AI returned empty result");
+      }
+
+      setPlan(buildPlan(safeDestination, safeDays, style, mapProvider));
+      setAiStatus("AI plan generated:\n" + data.result);
+    } catch (err) {
+      console.error("AI ERROR:", err);
+      setAiStatus(`AI failed: ${err.message}`);
+      setPlan(buildPlan(safeDestination, safeDays, style, mapProvider));
+    } finally {
+      setLoading(false);
+    }
   }
 
   function toggleInterest(interest) {
-    setInterests((current) => current.includes(interest) ? current.filter((x) => x !== interest) : [...current, interest]);
+    setInterests((current) =>
+      current.includes(interest)
+        ? current.filter((x) => x !== interest)
+        : [...current, interest]
+    );
   }
 
   async function copyPlan() {
@@ -177,48 +221,116 @@ export default function App() {
               <input style={styles.input} type="number" min="1" max="30" value={days} onChange={(e) => setDays(e.target.value)} />
             </Field>
             <Field label="Style" icon="⚡">
-              <select style={styles.input} value={style} onChange={(e) => setStyle(e.target.value)}>{tripStyles.map((x) => <option key={x}>{x}</option>)}</select>
+              <select style={styles.input} value={style} onChange={(e) => setStyle(e.target.value)}>
+                {tripStyles.map((x) => <option key={x}>{x}</option>)}
+              </select>
             </Field>
             <Field label="Budget" icon="💳">
-              <select style={styles.input} value={budget} onChange={(e) => setBudget(e.target.value)}>{budgets.map((x) => <option key={x}>{x}</option>)}</select>
+              <select style={styles.input} value={budget} onChange={(e) => setBudget(e.target.value)}>
+                {budgets.map((x) => <option key={x}>{x}</option>)}
+              </select>
             </Field>
             <Field label="Map" icon="🗺️">
-              <select style={styles.input} value={mapProvider} onChange={(e) => setMapProvider(e.target.value)}>{mapProviders.map((x) => <option key={x.value} value={x.value}>{x.label}</option>)}</select>
+              <select style={styles.input} value={mapProvider} onChange={(e) => setMapProvider(e.target.value)}>
+                {mapProviders.map((x) => <option key={x.value} value={x.value}>{x.label}</option>)}
+              </select>
             </Field>
           </div>
 
           <div style={styles.interestHeader}>
             <strong>Interests</strong>
-            <select style={styles.smallInput} value={language} onChange={(e) => setLanguage(e.target.value)}>{languages.map((x) => <option key={x}>{x}</option>)}</select>
+            <select style={styles.smallInput} value={language} onChange={(e) => setLanguage(e.target.value)}>
+              {languages.map((x) => <option key={x}>{x}</option>)}
+            </select>
           </div>
-          <div style={styles.chips}>{interestOptions.map((interest) => <button key={interest} onClick={() => toggleInterest(interest)} style={interests.includes(interest) ? styles.chipActive : styles.chip}>{interest}</button>)}</div>
-          <div style={styles.actions}><button style={styles.primaryButton} onClick={generatePlan}>Generate Trip</button><span style={styles.status}>{plan.length} stops ready</span></div>
+
+          <div style={styles.chips}>
+            {interestOptions.map((interest) => (
+              <button key={interest} onClick={() => toggleInterest(interest)} style={interests.includes(interest) ? styles.chipActive : styles.chip}>
+                {interest}
+              </button>
+            ))}
+          </div>
+
+          <div style={styles.actions}>
+            <button style={styles.primaryButton} onClick={generatePlan} disabled={loading}>
+              {loading ? "Generating..." : "Generate Trip"}
+            </button>
+            <span style={styles.status}>{aiStatus} • {plan.length} stops ready</span>
+          </div>
         </header>
 
         <main style={styles.layout}>
           <section style={styles.mainCard}>
             <div style={styles.sectionHeader}>
-              <div><h2 style={styles.h2}>Smart Itinerary for {safeDestination}</h2><p style={styles.muted}>Curated stops with map links, movement notes and photo guidance.</p></div>
+              <div>
+                <h2 style={styles.h2}>Smart Itinerary for {safeDestination}</h2>
+                <p style={styles.muted}>Curated stops with map links, movement notes and photo guidance.</p>
+              </div>
               <button style={styles.secondaryButton} onClick={copyPlan}>{copied ? "Copied" : "Copy Plan"}</button>
             </div>
 
-            {groupedPlan.map((day) => <div key={day.day} style={styles.dayBlock}>
-              <div style={styles.dayHeader}><div style={styles.dayBadge}>D{day.day}</div><div><h3 style={styles.h3}>Day {day.day}</h3><p style={styles.mutedSmall}>{day.places.length} suggested stops</p></div></div>
-              <div style={styles.cardsStack}>{day.places.map((place, index) => <article key={place.id} style={styles.stopCard}>
-                <div style={styles.stopNumber}>{index + 1}</div>
-                <div style={styles.stopBody}>
-                  <div style={styles.stopTop}><div><h4 style={styles.h4}>{place.title}</h4><p style={styles.mutedSmall}>{place.type} • {place.duration} • {place.movement}</p></div><div style={styles.linkRow}><a style={styles.linkButton} href={place.map} target="_blank" rel="noreferrer">Map</a><a style={styles.linkButton} href={place.info} target="_blank" rel="noreferrer">Info</a></div></div>
-                  <p style={styles.placeName}>{place.placeName}</p><p style={styles.reason}>{place.reason}</p>
-                  <div style={styles.noteGrid}><div style={styles.note}><b>Best shot:</b> {place.photo}</div><div style={styles.note}><b>Action:</b> Save this stop and verify opening hours before the trip.</div></div>
+            {groupedPlan.map((day) => (
+              <div key={day.day} style={styles.dayBlock}>
+                <div style={styles.dayHeader}>
+                  <div style={styles.dayBadge}>D{day.day}</div>
+                  <div>
+                    <h3 style={styles.h3}>Day {day.day}</h3>
+                    <p style={styles.mutedSmall}>{day.places.length} suggested stops</p>
+                  </div>
                 </div>
-              </article>)}</div>
-            </div>)}
+
+                <div style={styles.cardsStack}>
+                  {day.places.map((place, index) => (
+                    <article key={place.id} style={styles.stopCard}>
+                      <div style={styles.stopNumber}>{index + 1}</div>
+                      <div style={styles.stopBody}>
+                        <div style={styles.stopTop}>
+                          <div>
+                            <h4 style={styles.h4}>{place.title}</h4>
+                            <p style={styles.mutedSmall}>{place.type} • {place.duration} • {place.movement}</p>
+                          </div>
+                          <div style={styles.linkRow}>
+                            <a style={styles.linkButton} href={place.map} target="_blank" rel="noreferrer">Map</a>
+                            <a style={styles.linkButton} href={place.info} target="_blank" rel="noreferrer">Info</a>
+                          </div>
+                        </div>
+                        <p style={styles.placeName}>{place.placeName}</p>
+                        <p style={styles.reason}>{place.reason}</p>
+                        <div style={styles.noteGrid}>
+                          <div style={styles.note}><b>Best shot:</b> {place.photo}</div>
+                          <div style={styles.note}><b>Action:</b> Save this stop and verify opening hours before the trip.</div>
+                        </div>
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              </div>
+            ))}
           </section>
 
           <aside style={styles.sidebar}>
-            <Panel title="Trip Summary"><InfoRow icon="🌍" label="Destination" value={safeDestination} /><InfoRow icon="📅" label="Days" value={safeDays} /><InfoRow icon="⚡" label="Style" value={style} /><InfoRow icon="🧭" label="Stops" value={plan.length} /></Panel>
-            <Panel title="Budget Estimate"><InfoRow icon="🏨" label="Hotel" value={`€${budgetEstimate.hotel}`} /><InfoRow icon="🍽️" label="Food" value={`€${budgetEstimate.food}`} /><InfoRow icon="🚕" label="Local" value={`€${budgetEstimate.local}`} /><InfoRow icon="🎟️" label="Activities" value={`€${budgetEstimate.activities}`} /><div style={styles.total}><span>Total</span><strong>€{budgetEstimate.total}</strong></div><p style={styles.disclaimer}>Draft only. Flights, visas and transfers are not included.</p></Panel>
-            <Panel title="Content Mode"><p style={styles.copyLine}><b>Hook:</b> {content.hook}</p><p style={styles.copyLine}><b>Structure:</b> {content.structure}</p><p style={styles.copyLine}><b>Caption:</b> {content.caption}</p></Panel>
+            <Panel title="Trip Summary">
+              <InfoRow icon="🌍" label="Destination" value={safeDestination} />
+              <InfoRow icon="📅" label="Days" value={safeDays} />
+              <InfoRow icon="⚡" label="Style" value={style} />
+              <InfoRow icon="🧭" label="Stops" value={plan.length} />
+            </Panel>
+
+            <Panel title="Budget Estimate">
+              <InfoRow icon="🏨" label="Hotel" value={`€${budgetEstimate.hotel}`} />
+              <InfoRow icon="🍽️" label="Food" value={`€${budgetEstimate.food}`} />
+              <InfoRow icon="🚕" label="Local" value={`€${budgetEstimate.local}`} />
+              <InfoRow icon="🎟️" label="Activities" value={`€${budgetEstimate.activities}`} />
+              <div style={styles.total}><span>Total</span><strong>€{budgetEstimate.total}</strong></div>
+              <p style={styles.disclaimer}>Draft only. Flights, visas and transfers are not included.</p>
+            </Panel>
+
+            <Panel title="Content Mode">
+              <p style={styles.copyLine}><b>Hook:</b> {content.hook}</p>
+              <p style={styles.copyLine}><b>Structure:</b> {content.structure}</p>
+              <p style={styles.copyLine}><b>Caption:</b> {content.caption}</p>
+            </Panel>
           </aside>
         </main>
       </div>
@@ -227,15 +339,30 @@ export default function App() {
 }
 
 function Field({ label, icon, children, wide }) {
-  return <label style={{ ...styles.field, ...(wide ? styles.wideField : {}) }}><span style={styles.label}>{icon} {label}</span>{children}</label>;
+  return (
+    <label style={{ ...styles.field, ...(wide ? styles.wideField : {}) }}>
+      <span style={styles.label}>{icon} {label}</span>
+      {children}
+    </label>
+  );
 }
 
 function Panel({ title, children }) {
-  return <div style={styles.panel}><h2 style={styles.panelTitle}>{title}</h2><div style={styles.panelBody}>{children}</div></div>;
+  return (
+    <div style={styles.panel}>
+      <h2 style={styles.panelTitle}>{title}</h2>
+      <div style={styles.panelBody}>{children}</div>
+    </div>
+  );
 }
 
 function InfoRow({ icon, label, value }) {
-  return <div style={styles.infoRow}><span>{icon} {label}</span><strong>{value}</strong></div>;
+  return (
+    <div style={styles.infoRow}>
+      <span>{icon} {label}</span>
+      <strong>{value}</strong>
+    </div>
+  );
 }
 
 const styles = {
@@ -260,11 +387,11 @@ const styles = {
   actions: { display: "flex", alignItems: "center", gap: 14, marginTop: 18, flexWrap: "wrap" },
   primaryButton: { border: 0, background: "#0f172a", color: "white", borderRadius: 16, padding: "14px 20px", fontWeight: 900, cursor: "pointer", boxShadow: "0 14px 35px rgba(15,23,42,.25)" },
   secondaryButton: { border: 0, background: "#0f172a", color: "white", borderRadius: 14, padding: "11px 16px", fontWeight: 900, cursor: "pointer" },
-  status: { color: "#64748b", fontSize: 14 },
+  status: { color: "#64748b", fontSize: 14, whiteSpace: "pre-wrap" },
   layout: { display: "grid", gridTemplateColumns: "minmax(0,2fr) minmax(300px,1fr)", gap: 18, marginTop: 18 },
   mainCard: { background: "rgba(255,255,255,.92)", border: "1px solid #e2e8f0", borderRadius: 28, padding: 24, boxShadow: "0 20px 70px rgba(15,23,42,.06)" },
   sectionHeader: { display: "flex", justifyContent: "space-between", gap: 16, alignItems: "start", marginBottom: 22, flexWrap: "wrap" },
-  h2: { margin: 0, fontSize: 28, letterSpacing: -.5 },
+  h2: { margin: 0, fontSize: 28, letterSpacing: -0.5 },
   h3: { margin: 0, fontSize: 21 },
   h4: { margin: 0, fontSize: 18 },
   muted: { color: "#64748b", margin: "7px 0 0" },
@@ -292,4 +419,3 @@ const styles = {
   disclaimer: { color: "#64748b", fontSize: 12, margin: 0 },
   copyLine: { color: "#334155", fontSize: 14, margin: 0, lineHeight: 1.5 }
 };
-
