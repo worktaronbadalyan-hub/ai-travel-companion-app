@@ -1,0 +1,22 @@
+{
+    "name": "AI Travel Companion",
+    "short_name": "Travel AI",
+    "description": "Smart AI trip planner with itinerary, maps, budget and content ideas.",
+    "start_url": "/",
+    "display": "standalone",
+    "background_color": "#ffffff",
+    "theme_color": "#0f172a",
+    "orientation": "portrait",
+    "icons": [
+      {
+        "src": "/icons.svg",
+        "sizes": "192x192",
+        "type": "image/svg+xml"
+      },
+      {
+        "src": "/icons.svg",
+        "sizes": "512x512",
+        "type": "image/svg+xml"
+      }
+    ]
+  }
